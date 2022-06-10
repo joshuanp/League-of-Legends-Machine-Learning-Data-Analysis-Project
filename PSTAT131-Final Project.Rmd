@@ -1,0 +1,364 @@
+---
+title: "Final Project"
+author: "Joshua Price PSTAT 131"
+output:
+    html_document:
+      toc: true
+      toc_float: true
+      code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE,
+                      warning = FALSE)
+```
+
+```{r echo=FALSE, include = FALSE}
+library(tidymodels)
+library(ISLR) # For the Smarket data set
+library(ISLR2) # For the Bikeshare data set
+library(discrim)
+library(poissonreg)
+library(corrr)
+library(klaR) # for naive bayes
+library(pROC)
+library(ggplot2)
+library(glmnet)
+library(janitor)
+library(randomForest)
+library(xgboost)
+library(vip)
+library(rpart.plot)
+library(ranger)
+library(corrplot)
+tidymodels_prefer()
+```
+# Final Project
+## Introduction
+### What is League of Legends?
+With nearly 130 million monthly players and an international esports scene circulating hundreds of millions of dollars, League of Legends is a multiplayer online battle arena game with two teams facing off with the purpose to destroy the enemy nexus.
+
+
+### Goals 
+My project will be looking at data collected from the first 10 minutes of a game and predicting which team will win.
+
+### Why is this important
+By predicting who'll win, we'll also find out which predictors are most important for those wins. This information can then be used for players to focus on whats most vital to improve.
+
+## Cleaning the data
+-Loading the data
+```{r results=FALSE}
+league <- read.csv("Data/high_diamond_ranked_10min.csv")
+```
+-Cleaning names
+```{r results=FALSE}
+league <- league %>% clean_names()
+```
+
+### Deselect unimportant variables
+
+I've deselected the following variables:   
+
+-gameid because it's not relevant to who wins  
+-blue/red elite monsters because they are encompassed by blue/red herald and dragons  
+-blue/red total gold because the total gold is represented by blue/red kills and blue/red minions killed  
+-blue/red total experience because experience is gained primarily by being near minions that have died and champion kills. Since this is high ranked gameplay. You can assume that minion kills will be directly related to experience gain, thus removing total experience gained.  
+-blue/red gold diff for the same reason as total gold  
+-blue/red experience diff for the same reason as total experience  
+-blue/red avg level for the same reason as total experience  
+-blue/red cs per min because cs is also the number of minions/jungle minions killed, thus its already represented  
+-blue/red gold per min for the same reason as total gold  
+-red kills because its blue deaths  
+-red deaths because its blue kills  
+-red first blood because it will be the opposite of blue first blood   
+
+
+```{r}
+league <- league %>% select(-game_id, -blue_elite_monsters, -red_elite_monsters, -blue_total_gold,-red_total_gold, - blue_total_experience, -red_total_experience, -blue_gold_diff,-red_gold_diff, -blue_avg_level,-red_avg_level, -blue_experience_diff,-red_experience_diff,-blue_cs_per_min,-red_cs_per_min,-blue_gold_per_min,-red_gold_per_min,-red_kills,-red_deaths,-red_first_blood)
+
+```
+
+After removing these variables. I now have 19 predictors for blue_wins
+
+
+## Exploratory Data Analysis
+
+
+### Correlation plot
+
+Checking the correlation plot to make sure I don't have any more heavily correlated variables
+```{r}
+league %>% select(is.numeric) %>% cor() %>% corrplot(type='lower',diag=FALSE)
+```
+
+Looking at the correlation plot, I see there's still a pretty high correlation between blue assists/blue kills, and red deaths to red assists. I'm choosing not to remove assists, however, because I believe there could still be importance there.  
+
+There's also correlation between blue and red dragons which makes sense. As only one dragon can spawn in the first 10 minutes, if one team kills a dragon, then the other team won't. However, I'm not removing it because there are enough games where neither team kills a dragon in the first 10 minutes.  
+
+
+### Response variable distribution
+
+Now I'll be checking to make sure there are an even amount of wins and losses in the dataset
+```{r}
+league %>% ggplot(aes(x=blue_wins)) + geom_bar()
+
+```
+
+As shown, there are nearly equal amounts of wins and losses. 
+
+
+### Various predictions
+
+I'm predicting that blue first blood, kill difference, and minions killed difference are going to be the most important predictors. 
+
+- The first graph shows blue winning vs them getting first blood. It seems that blue team has a much higher chance of winning if they get first blood
+- The second graph shows blue winning vs the kill difference between blue and red team. This looks like a standard bell curve with the median around 3. This means when blue team has more kills than red team at 10 minutes, blue is winning more.
+- The third graph is showing the difference of the total number of both minion types killed. Interestingly, the distribution looks almost identical to the kills graph. This also implies that having more minions killed means blue is more likely to win. 
+
+
+```{r}
+league %>% ggplot(aes(x=blue_first_blood,y=blue_wins)) + geom_col()
+
+league %>% ggplot(aes(x=blue_kills-blue_deaths,y=blue_wins))+geom_col()
+
+league %>% ggplot(aes(x=(blue_total_minions_killed+blue_total_jungle_minions_killed)-( red_total_minions_killed + red_total_jungle_minions_killed),y=blue_wins))+geom_col()
+```
+
+## Modeling Preparation
+
+### Preparing Data  
+
+I'm making blue wins and blue first blood into factors because they both represent boolean values.
+```{r}
+league$blue_wins <- as.factor(league$blue_wins)
+league$blue_first_blood <- as.factor(league$blue_first_blood)
+```
+
+### Splitting the Data
+
+I'm splitting the data with a .7 proportion stratifying off of blue_wins to ensure the distribution of wins stays the same 
+```{r}
+set.seed(2505)
+league_split <- initial_split(league, prop =.7, strata = blue_wins)
+league_train <- training(league_split)
+league_test <- testing(league_split)
+```
+
+
+### Recipe and Folds
+
+Since I've already removed all unnecessary predictors from the data, I'm making a recipe using all the predictors. I'm using step normalize to center and scale my predictors. I'm making 5 folds with 3 repeats and stratifying on blue wins to ensure the same distribution of wins across the fodls.
+```{r}
+league_folds <- vfold_cv(league_train, v = 5, strata=blue_wins, repeats = 3)
+
+league_recipe <- recipe(blue_wins ~ ., data=league_train) %>% step_dummy(all_nominal_predictors()) %>% step_normalize(all_predictors())
+
+```
+
+## Modeling
+
+
+### Logistic Regression
+
+I'm starting off with a more basic model, logistic regression. It works by assuming the predictors have a linear relationship with the response variable, in our case, blue wins. Since the goal of this project is to predict whether or not blue team will win, this is a classification model. For this and all other models, I will be using the classification mode. 
+```{r}
+log_reg <- logistic_reg() %>%
+  set_engine("glm") %>%
+  set_mode("classification")
+log_wkflow <- workflow() %>%
+  add_model(log_reg) %>%
+  add_recipe(league_recipe)
+
+log_fit <- fit(log_wkflow,league_train)
+```
+I'm storing the accuracies of the model on both the training and testing data set, for comparison with the other models.
+```{r}
+log_train_acc <- augment(log_fit,new_data=league_train) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+
+log_test_acc <- augment(log_fit,new_data=league_test) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+```
+
+### Elastic Net
+
+I'll now be modeling an elastic net tuning the penalty and mixture parameters. The elastic net model is a combination of the penalties from the lasso and ridge regression models, improving on both of them.
+
+
+I'm first setting up my model. For this I'll be creating a grid with 10 levels each with mixture ranging from 0 to 1 and penalty ranging from -5 to 5
+```{r}
+elastic_net_spec <- multinom_reg(penalty=tune(), mixture = tune()) %>% 
+  set_mode("classification") %>% 
+  set_engine("glmnet")
+
+en_workflow <- workflow() %>%
+  add_recipe(league_recipe) %>%
+  add_model(elastic_net_spec)
+
+en_grid <- grid_regular(penalty(range= c(-5,5)),
+                        mixture(range=c(0,1)), levels=10)
+```
+
+Fitting my model to the folded data.
+```{r}
+tune_res <- tune_grid(
+  en_workflow,
+  resamples = league_folds,
+  grid = en_grid
+)
+
+```
+
+Here I'm selecting the best model and finalizing a fit that I'll use on testing set.
+```{r}
+best_model <- select_best(tune_res, metric="roc_auc")
+en_final <- finalize_workflow(en_workflow, best_model)
+en_final_fit <- fit(en_final, data = league_train)
+
+predicted_data <- augment(en_final_fit, new_data = league_test) %>%
+                            select(blue_wins, starts_with(".pred"))
+
+```
+
+Plotting the roc curve and heatmap to see how this model has performed. It seems to be a pretty accurate model, though with some errors, with an ROC value of .801. 
+```{r}
+predicted_data %>% roc_auc(blue_wins, .pred_0)
+predicted_data %>% roc_curve(blue_wins, .pred_0) %>% 
+  autoplot
+
+predicted_data %>% 
+  conf_mat(truth = blue_wins, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+
+Storing the accuracies of the elastic net model for comparison in the conclusion
+```{r}
+en_train_acc <- augment(en_final_fit,new_data=league_train) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+
+en_test_acc <- augment(en_final_fit,new_data=league_test) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+
+```
+
+
+### Classification Tree
+
+I will now be setting up a classification tree and tuning the cost complexity parameter. 
+As you can see, the optimal cost complexity parameter is pretty low.
+```{r}
+tree_spec <- decision_tree() %>% 
+  set_engine("rpart")
+
+class_tree_spec <- tree_spec %>%
+  set_mode("classification")
+
+class_tree_wf <- workflow() %>%
+  add_model(class_tree_spec %>%
+              set_args(cost_complexity=tune())) %>%
+  add_recipe(league_recipe)
+
+param_grid <- grid_regular(cost_complexity(range=c(-3,-1)),levels=10)
+
+tune_res <- tune_grid(class_tree_wf, resamples = league_folds, grid = param_grid,
+                      metrics = metric_set(accuracy))
+autoplot(tune_res)
+```
+
+I'm now selecting the best cost complexity parameter, finalizing the fit, and producing a visual of the tree.
+```{r}
+best_complexity <- select_best(tune_res)
+class_tree_final <- finalize_workflow(class_tree_wf, best_complexity)
+class_tree_final_fit <- fit(class_tree_final, data =league_train)
+
+class_tree_final_fit %>% extract_fit_engine() %>% rpart.plot()
+```
+
+Storing the accuracies of the models for comparison in the conclusion.
+```{r}
+class_train_acc <- augment(class_tree_final_fit,new_data=league_train) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+
+class_test_acc <- augment(class_tree_final_fit,new_data=league_test) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+```
+
+### Random Forest
+
+On to the final model, random forest.  
+I'm tuning three parameters: mtry, trees, and min_n.  
+- mtry: the number of variables randomly sampled at each split
+- trees: the number of trees
+- min_n: the minimum number of points in one group for a split  
+I chose mtry to be 1 to 19 because i have 19 predictors, so it randomly samples between 1 and 19 predictors.  
+
+
+```{r}
+forest_spec <- rand_forest() %>% set_engine("randomForest", importance = TRUE) %>% set_mode("classification")
+
+forest_wf <- workflow() %>% add_model(forest_spec %>% set_args(mtry=tune(),trees=tune(),min_n=tune())) %>% add_recipe(league_recipe)
+
+multi_param_grid <- grid_regular(mtry(range = c(1,19)), trees(range(1,200)), min_n(range(1,30)), levels = 8)
+
+multi_tune_res <- tune_grid(forest_wf, resamples = league_folds, grid = multi_param_grid, metrics = metric_set(roc_auc) )
+```
+
+
+After plotting the results you can see the best roc_auc value comes with a higher amount of trees, but the difference between 114 and 200 trees is pretty negligible.  
+```{r}
+autoplot(multi_tune_res)
+```
+
+Selecting the best fit and finalizing the model.
+```{r}
+collect_metrics(multi_tune_res) %>% arrange(-mean)
+
+best_forest_model <- select_best(multi_tune_res, metric = "roc_auc")
+
+best_model_final <- finalize_workflow(forest_wf, best_forest_model)
+best_model_final_fit <- fit(best_model_final, data = league_train)
+```
+
+Displaying the most important predictors. Interestingly, blue deaths and kills had much more significance than most of the other predictors, with dragons and towers having just a little. Assists have more importance than minions killed. This could be taken as advice to gameplay. Prioritize getting kills or assisting in kills, but don't ignore killing your minions, and kill dragons whenever you aren't risking dying yourself.  
+```{r}
+best_model_final_fit %>% extract_fit_engine() %>% vip()
+```
+
+Storing accuracies for comparison in conclusion
+```{r}
+rf_train_acc <- augment(best_model_final_fit,new_data=league_train) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+
+rf_test_acc <- augment(best_model_final_fit,new_data=league_test) %>% accuracy(truth=blue_wins,estimate=.pred_class)
+```
+
+
+## Conclusion
+
+### Comparing accuracies
+
+
+Here we see that the most accurate model on the training data is the random forest with an 83.2% accuracy, being much higher than all other models. Athough, the most accurate model on the testing data is the elastic net, but only by .1% with a 72.6% accuracy and random forest at 72.5%. The huge difference between the training and testing data accuracies for the random forest model is likely due to overfitting.
+
+```{r}
+training_results <- bind_rows(log_train_acc, en_train_acc, 
+                              class_train_acc, rf_train_acc) %>%
+  tibble() %>% mutate(model = c("Logistic","Elastic Net", 
+                                "Classification Tree", "Random Forest")) %>% 
+  select(model, .estimate)
+
+testing_results <- bind_rows(log_test_acc, en_test_acc, 
+                              class_test_acc, rf_test_acc) %>%
+  tibble() %>% 
+  select(.estimate)
+
+combined_results <- bind_cols(training_results, testing_results)
+
+combined_results
+
+
+```
+
+
+### Summary
+
+To predict the outcome of a league of legends match by data at the 10 minute mark, I compared a logistic regression model, an elastic net, a classification tree, and a random forest model. Looking at the models performance on the testing data set, I conclude that the elastic net model has the highest performance at a 72.6% accuracy, but the other models were extremely close behind. In the EDA section, I predicted that the blue first blood, blue kills, deaths, and minions killed were going to be the most important predictors. Using the results from the random forest importance list, I confirmed that blue deaths and blue kills were the most important, but assists seemed to have greater importance than minions killed. So if you're going into a league of legends match trying to win, make sure to get kills... but try not to die.
+
+
+
+
+
+

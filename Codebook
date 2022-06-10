@@ -1,0 +1,48 @@
+Codebook
+
+Data Source Citaton: https://www.kaggle.com/datasets/bobbyscience/league-of-legends-diamond-ranked-games-10-min?resource=download
+
+-gameId: the unique gameID
+-blueWins: if blue wins, 1 being a win and 0 being a loss
+-blueWardsPlaced: How many wards blue team placed
+-blueWardsDestroyed: How many wards blue team destroyed
+-blueFirstBlood: Boolean 1 and 0, 1 representing blue team got the first blood
+-blueKills: How many kills for blue team
+-blueDeaths: How many deaths on blue team
+-blueAssists: How many assists blue team has
+-blueEliteMonsters: How many elite monsters blue team killed(dragon or herald)
+-blueDragons: How many dragons blue team killed
+-blueHerald: How many heralds blue team killed
+-blueTowersDestroyed: How many towers blue team destroyed
+-blueTotalGold: How much gold blue team has
+-blueAvgLevel: The average level of blue teams 5 members
+-blueTotalExperience: Blue teams summed experience
+-blueTotalMinionsKilled: The total number of minions killed by blue team
+-blueTotalJungleMinionsKilled: The total number of jungle minions killed by blue team
+-blueGoldDiff: The difference between blue teams gold and red teams gold
+-blueExperienceDiff: The difference between blue teams exp and red teams exp
+-blueCsPerMin: The amount of minions/jungle minions blue team has killed divided by 10 minutes
+-blueGoldPerMin: The amount of gold blue team has made divided by 10 minutes
+
+-redWardsPlaced: How many wards red team placed
+-redWardsDestroyed: How many wards red team destroyed
+-redFirstBlood: Boolean 1 and 0, 1 representing red team got the first blood
+-redKills: How many kills for red team
+-redDeaths: How many deaths on red team
+-redAssists: How many assists red team has
+-redEliteMonsters: How many elite monsters red team killed(dragon or herald)
+-redDragons: How many dragons red team killed
+-redHerald: How many heralds red team killed
+-redTowersDestroyed: How many towers red team destroyed
+-redTotalGold: How much gold red team has
+-redAvgLevel: The average level of red teams 5 members
+-redTotalExperience: red teams summed experience
+-redTotalMinionsKilled: The total number of minions killed by red team
+-redTotalJungleMinionsKilled: The total number of jungle minions killed by red team
+-redGoldDiff: The difference between red teams gold and blue teams gold
+-redExperienceDiff: The difference between red teams exp and blue teams exp
+-redCsPerMin: The amount of minions/jungle minions red team has killed divided by 10 minutes
+-redGoldPerMin: The amount of gold red team has made divided by 10 minutes
+
+
+
