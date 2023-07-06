@@ -15,5 +15,5 @@ Performing ML modeling techniques to predict a winner from the first 10 minutes 
 
 * R
 * Tidymodels
-* ggplot
+* ggplot2
 * R Markdown
