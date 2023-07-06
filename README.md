@@ -1,5 +1,5 @@
 # League-of-Legends-Machine-Learning-Data-Analysis-Project
-Performing ML modeling techniques to predict a winner from the first 10 minutes of League of Legends games
+Performing ML modeling techniques to predict a winner from the first 10 minutes of League of Legends games.
 
 ## Methods Used
 
